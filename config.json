@@ -1,0 +1,7 @@
+{
+    "devices": [
+        {"display": 1, "port": 5901},
+        {"display": 2, "port": 5902},
+        {"display": 3, "port": 5903}
+    ]
+}
