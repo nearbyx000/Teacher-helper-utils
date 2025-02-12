@@ -2,37 +2,34 @@ import socket
 import cv2
 import numpy as np
 
-SERVER_IP = '127.0.0.1'
-PORT = 5000
-
-def start_client():
-    # Создаем сокет
+def start_client(server_ip):
     client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    client_socket.connect((SERVER_IP, PORT))
-    print("Подключение к серверу...")
+    client_socket.connect((server_ip, 5000))
 
     while True:
-        # Получаем размер кадра
-        data_length = int.from_bytes(client_socket.recv(4), 'big')
+        # Получаем размер данных
+        data_size = int.from_bytes(client_socket.recv(4), 'big')
+        
+        # Получаем сами данные
         data = b''
-
-        # Чтение данных кадра
-        while len(data) < data_length:
-            packet = client_socket.recv(data_length - len(data))
+        while len(data) < data_size:
+            packet = client_socket.recv(data_size - len(data))
             if not packet:
                 break
             data += packet
 
-        # Декодирование кадра
-        frame = np.frombuffer(data, dtype=np.uint8)
-        frame = cv2.imdecode(frame, cv2.IMREAD_COLOR)
-
-        # Отображение кадра
-        cv2.imshow("Remote Screen", frame)
-        if cv2.waitKey(1) == 27:  # Выход по нажатию ESC
+        # Декодируем кадр
+        frame = cv2.imdecode(np.frombuffer(data, dtype=np.uint8), cv2.IMREAD_COLOR)
+        
+        # Отображаем кадр
+        cv2.imshow(f"Экран устройства {server_ip}", frame)
+        
+        # Выход по нажатию 'q'
+        if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
     client_socket.close()
+    cv2.destroyAllWindows()
 
 if __name__ == "__main__":
-    start_client()
+    start_client("IP_АДРЕС_СЕРВЕРА")  # Замените на IP-адрес сервера
