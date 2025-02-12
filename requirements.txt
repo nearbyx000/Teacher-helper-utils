@@ -1,0 +1,4 @@
+kivy==2.0.0
+mss==6.1.0
+opencv-python==4.5.5.64
+numpy==1.21.5
