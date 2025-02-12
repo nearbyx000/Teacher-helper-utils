@@ -1,15 +1,21 @@
-from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.button import Button
-from kivy.uix.label import Label
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.screenmanager import ScreenManager, Screen
+from kivymd.app import MDApp  # Используем MDApp вместо App
+from kivymd.uix.button import MDRaisedButton, MDFlatButton
+from kivymd.uix.label import MDLabel
 import subprocess
-import threading
 import os
 import signal
 import sys
+
+# Импортируем стили, если файл существует
+try:
+    from styles import apply_material_you_theme
+except ImportError:
+    def apply_material_you_theme(app):
+        pass  # Если файла styles.py нет, ничего не делаем
 
 # Список устройств в сети (заглушка)
 devices = ["192.168.1.2", "192.168.1.3"]  # Замените на реальные IP-адреса
@@ -19,7 +25,7 @@ class MainScreen(Screen):
         super(MainScreen, self).__init__(**kwargs)
         self.layout = BoxLayout(orientation='vertical')
         
-        self.label = Label(text="Список устройств в сети:")
+        self.label = MDLabel(text="Список устройств в сети:", halign="center", font_style="H5")
         self.layout.add_widget(self.label)
         
         self.scroll = ScrollView()
@@ -32,12 +38,12 @@ class MainScreen(Screen):
         self.layout.add_widget(self.scroll)
         
         # Кнопка поиска устройств
-        self.search_btn = Button(text="Поиск устройств", size_hint_y=None, height=40)
+        self.search_btn = MDRaisedButton(text="Поиск устройств", size_hint_y=None, height=40)
         self.search_btn.bind(on_press=self.search_devices)
         self.layout.add_widget(self.search_btn)
         
         # Кнопка завершения урока
-        self.shutdown_btn = Button(text="Завершить урок", size_hint_y=None, height=40, background_color=(1, 0, 0, 1))
+        self.shutdown_btn = MDRaisedButton(text="Завершить урок", size_hint_y=None, height=40, md_bg_color=(1, 0, 0, 1))
         self.shutdown_btn.bind(on_press=self.shutdown_all)
         self.layout.add_widget(self.shutdown_btn)
         
@@ -48,7 +54,7 @@ class MainScreen(Screen):
         """Обновляет список устройств на экране"""
         self.grid.clear_widgets()
         for device in devices:
-            btn = Button(text=device, size_hint_y=None, height=40)
+            btn = MDRaisedButton(text=device, size_hint_y=None, height=40)
             btn.bind(on_press=self.device_selected)
             self.grid.add_widget(btn)
 
@@ -76,7 +82,7 @@ class MainScreen(Screen):
                 print(f"Ошибка при завершении процесса: {e}")
         
         # Закрываем приложение
-        App.get_running_app().stop()
+        MDApp.get_running_app().stop()  # Используем MDApp вместо App
 
     def device_selected(self, instance):
         device_name = instance.text
@@ -88,10 +94,10 @@ class DeviceScreen(Screen):
         super(DeviceScreen, self).__init__(**kwargs)
         self.layout = BoxLayout(orientation='vertical')
         
-        self.device_label = Label(text="Устройство: ")
+        self.device_label = MDLabel(text="Устройство: ", halign="center", font_style="H5")
         self.layout.add_widget(self.device_label)
         
-        self.back_btn = Button(text="Назад")
+        self.back_btn = MDFlatButton(text="Назад")
         self.back_btn.bind(on_press=self.go_back)
         self.layout.add_widget(self.back_btn)
         
@@ -104,8 +110,11 @@ class DeviceScreen(Screen):
     def go_back(self, instance):
         self.manager.current = 'main_screen'
 
-class MyApp(App):
+class MyApp(MDApp):  # Наследуем от MDApp вместо App
     def build(self):
+        # Применяем тему Material You
+        apply_material_you_theme(self)
+
         self.screen_manager = ScreenManager()
         self.main_screen = MainScreen(name='main_screen')
         self.device_screen = DeviceScreen(name='device_screen')
