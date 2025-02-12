@@ -1,43 +1,35 @@
 import socket
-import mss
 import cv2
 import numpy as np
 
-HOST = '0.0.0.0'  # Сервер слушает все интерфейсы
-PORT = 5000
+def start_client(server_ip):
+    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    client_socket.connect((server_ip, 5000))
 
-def start_server():
-    # Создаем сокет
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_socket.bind((HOST, PORT))
-    server_socket.listen(1)
-    print(f"Сервер запущен, ждет подключений на {HOST}:{PORT}")
+    while True:
+        # Получаем размер данных
+        data_size = int.from_bytes(client_socket.recv(4), 'big')
+        
+        # Получаем сами данные
+        data = b''
+        while len(data) < data_size:
+            packet = client_socket.recv(data_size - len(data))
+            if not packet:
+                break
+            data += packet
 
-    conn, addr = server_socket.accept()
-    print(f"Подключен клиент: {addr}")
+        # Декодируем кадр
+        frame = cv2.imdecode(np.frombuffer(data, dtype=np.uint8), cv2.IMREAD_COLOR)
+        
+        # Отображаем кадр
+        cv2.imshow(f"Экран устройства {server_ip}", frame)
+        
+        # Выход по нажатию 'q'
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
 
-    with mss.mss() as sct:
-        monitor = sct.monitors[1]  # Захват основного монитора
-
-        while True:
-            # Захват экрана
-            screenshot = sct.grab(monitor)
-            frame = np.array(screenshot)
-            frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
-
-            # Изменение размера до 400x400
-            frame = cv2.resize(frame, (400, 400))
-
-            # Кодирование кадра в JPEG
-            _, encoded_frame = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 50])
-            data = encoded_frame.tobytes()
-
-            # Отправка размера данных и самих данных
-            conn.sendall(len(data).to_bytes(4, 'big'))  # Отправляем размер данных
-            conn.sendall(data)  # Отправляем сами данные
-
-    conn.close()
-    server_socket.close()
+    client_socket.close()
+    cv2.destroyAllWindows()
 
 if __name__ == "__main__":
-    start_server()
+    start_client("IP_АДРЕС_СЕРВЕРА")  # Замените на IP-адрес сервера
