@@ -1,38 +1,43 @@
 import socket
+import mss
 import cv2
 import numpy as np
 
-SERVER_IP = '127.0.0.1'
+HOST = '0.0.0.0'  # Сервер слушает все интерфейсы
 PORT = 5000
 
-def start_client():
+def start_server():
     # Создаем сокет
-    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    client_socket.connect((SERVER_IP, PORT))
-    print("Подключение к серверу...")
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket.bind((HOST, PORT))
+    server_socket.listen(1)
+    print(f"Сервер запущен, ждет подключений на {HOST}:{PORT}")
 
-    while True:
-        # Получаем размер кадра
-        data_length = int.from_bytes(client_socket.recv(4), 'big')
-        data = b''
+    conn, addr = server_socket.accept()
+    print(f"Подключен клиент: {addr}")
 
-        # Чтение данных кадра
-        while len(data) < data_length:
-            packet = client_socket.recv(data_length - len(data))
-            if not packet:
-                break
-            data += packet
+    with mss.mss() as sct:
+        monitor = sct.monitors[1]  # Захват основного монитора
 
-        # Декодирование кадра
-        frame = np.frombuffer(data, dtype=np.uint8)
-        frame = cv2.imdecode(frame, cv2.IMREAD_COLOR)
+        while True:
+            # Захват экрана
+            screenshot = sct.grab(monitor)
+            frame = np.array(screenshot)
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
 
-        # Отображение кадра
-        cv2.imshow("Remote Screen", frame)
-        if cv2.waitKey(1) == 27:  # Выход по нажатию ESC
-            break
+            # Изменение размера до 400x400
+            frame = cv2.resize(frame, (400, 400))
 
-    client_socket.close()
+            # Кодирование кадра в JPEG
+            _, encoded_frame = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 50])
+            data = encoded_frame.tobytes()
+
+            # Отправка размера данных и самих данных
+            conn.sendall(len(data).to_bytes(4, 'big'))  # Отправляем размер данных
+            conn.sendall(data)  # Отправляем сами данные
+
+    conn.close()
+    server_socket.close()
 
 if __name__ == "__main__":
-    start_client()
+    start_server()

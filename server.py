@@ -3,7 +3,7 @@ import mss
 import cv2
 import numpy as np
 
-HOST = '127.0.0.1'  # Сервер слушает все интерфейсы
+HOST = '0.0.0.0'  # Сервер слушает все интерфейсы
 PORT = 5000
 
 def start_server():
@@ -25,10 +25,16 @@ def start_server():
             frame = np.array(screenshot)
             frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
 
-            # Кодирование и отправка кадра
+            # Изменение размера до 400x400
+            frame = cv2.resize(frame, (400, 400))
+
+            # Кодирование кадра в JPEG
             _, encoded_frame = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 50])
             data = encoded_frame.tobytes()
-            conn.sendall(len(data).to_bytes(4, 'big') + data)
+
+            # Отправка размера данных и самих данных
+            conn.sendall(len(data).to_bytes(4, 'big'))  # Отправляем размер данных
+            conn.sendall(data)  # Отправляем сами данные
 
     conn.close()
     server_socket.close()
