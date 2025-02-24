@@ -1,126 +1,171 @@
-from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.scrollview import ScrollView
-from kivy.uix.gridlayout import GridLayout
-from kivy.uix.screenmanager import ScreenManager, Screen
-from kivymd.app import MDApp  # Используем MDApp вместо App
-from kivymd.uix.button import MDRaisedButton, MDFlatButton
-from kivymd.uix.label import MDLabel
-import subprocess
-import os
-import signal
 import sys
+from PySide6.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QLabel, QPushButton, QScrollArea, QGridLayout, QStackedWidget
+)
+from PySide6.QtCore import Qt, QProcess
+import os
+from qt_material import apply_stylesheet  # Импортируем библиотеку для тем
 
-# Импортируем стили, если файл существует
-try:
-    from styles import apply_material_you_theme
-except ImportError:
-    def apply_material_you_theme(app):
-        pass  # Если файла styles.py нет, ничего не делаем
+# Функция для загрузки стилей из файла по указанному пути
+def load_stylesheet(filepath):
+    """
+    Загружает стили из файла по указанному пути и возвращает их в виде строки.
+    
+    :param filepath: Полный путь к файлу стилей (например, "C:/styles/styles.qss").
+    :return: Содержимое файла стилей в виде строки.
+    """
+    try:
+        # Проверяем, существует ли файл
+        if not os.path.exists(filepath):
+            print(f"Файл стилей не найден: {filepath}")
+            return ""
+        
+        # Читаем содержимое файла
+        with open(filepath, "r", encoding="utf-8") as f:
+            return f.read()
+    except Exception as e:
+        print(f"Ошибка при загрузке стилей: {e}")
+        return ""
 
 # Список устройств в сети (заглушка)
 devices = ["192.168.1.2", "192.168.1.3"]  # Замените на реальные IP-адреса
 
-class MainScreen(Screen):
-    def __init__(self, **kwargs):
-        super(MainScreen, self).__init__(**kwargs)
-        self.layout = BoxLayout(orientation='vertical')
-        
-        self.label = MDLabel(text="Список устройств в сети:", halign="center", font_style="H5")
-        self.layout.add_widget(self.label)
-        
-        self.scroll = ScrollView()
-        self.grid = GridLayout(cols=1, spacing=10, size_hint_y=None)
-        self.grid.bind(minimum_height=self.grid.setter('height'))
-        
-        self.update_device_list()
-        
-        self.scroll.add_widget(self.grid)
-        self.layout.add_widget(self.scroll)
-        
+class MainScreen(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.init_ui()
+
+    def init_ui(self):
+        self.layout = QVBoxLayout()
+
+        # Заголовок
+        self.label = QLabel("Список устройств в сети:")
+        self.label.setAlignment(Qt.AlignCenter)
+        self.layout.addWidget(self.label)
+
+        # Список устройств
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        self.grid = QWidget()
+        self.grid_layout = QGridLayout()
+        self.grid.setLayout(self.grid_layout)
+        self.scroll.setWidget(self.grid)
+        self.layout.addWidget(self.scroll)
+
         # Кнопка поиска устройств
-        self.search_btn = MDRaisedButton(text="Поиск устройств", size_hint_y=None, height=40)
-        self.search_btn.bind(on_press=self.search_devices)
-        self.layout.add_widget(self.search_btn)
-        
+        self.search_btn = QPushButton("Поиск устройств")
+        self.search_btn.clicked.connect(self.search_devices)
+        self.layout.addWidget(self.search_btn)
+
         # Кнопка завершения урока
-        self.shutdown_btn = MDRaisedButton(text="Завершить урок", size_hint_y=None, height=40, md_bg_color=(1, 0, 0, 1))
-        self.shutdown_btn.bind(on_press=self.shutdown_all)
-        self.layout.add_widget(self.shutdown_btn)
-        
-        self.add_widget(self.layout)
+        self.shutdown_btn = QPushButton("Завершить урок")
+        self.shutdown_btn.setObjectName("shutdown_button")  # Устанавливаем ID для стилизации
+        self.shutdown_btn.clicked.connect(self.shutdown_all)
+        self.layout.addWidget(self.shutdown_btn)
+
+        self.setLayout(self.layout)
         self.processes = []  # Список для отслеживания запущенных процессов
 
     def update_device_list(self):
         """Обновляет список устройств на экране"""
-        self.grid.clear_widgets()
-        for device in devices:
-            btn = MDRaisedButton(text=device, size_hint_y=None, height=40)
-            btn.bind(on_press=self.device_selected)
-            self.grid.add_widget(btn)
+        for i in reversed(range(self.grid_layout.count())):
+            self.grid_layout.itemAt(i).widget().setParent(None)
 
-    def search_devices(self, instance):
+        for i, device in enumerate(devices):
+            btn = QPushButton(device)
+            btn.setObjectName("device_button")  # Устанавливаем класс для стилизации
+            btn.clicked.connect(lambda _, ip=device: self.device_selected(ip))
+            self.grid_layout.addWidget(btn, i, 0)
+
+    def search_devices(self):
         """Запускает поиск устройств и обновляет список"""
         global devices
         devices = ["192.168.1.2", "192.168.1.3"]  # Заглушка
         self.update_device_list()
-        
+
         # Запуск client.py для каждого устройства
         for device_ip in devices:
-            process = subprocess.Popen(["python", "client.py", device_ip])
-            self.processes.append(process)  # Сохраняем процесс
+            process = QProcess()
+            process.start("python", ["client.py", device_ip])
+            self.processes.append(process)
 
-    def shutdown_all(self, instance):
+    def shutdown_all(self):
         """Завершает все процессы и закрывает приложение"""
-        # Завершаем все дочерние процессы
         for process in self.processes:
             try:
-                if sys.platform == "win32":
-                    os.kill(process.pid, signal.SIGTERM)
-                else:
-                    process.terminate()
+                process.terminate()
             except Exception as e:
                 print(f"Ошибка при завершении процесса: {e}")
-        
+
         # Закрываем приложение
-        MDApp.get_running_app().stop()  # Используем MDApp вместо App
+        QApplication.quit()
 
-    def device_selected(self, instance):
-        device_name = instance.text
-        self.manager.current = 'device_screen'
-        self.manager.get_screen('device_screen').set_device(device_name)
+    def device_selected(self, device_ip):
+        """Переход на экран устройства"""
+        self.parent().set_current_screen("device_screen", device_ip)
 
-class DeviceScreen(Screen):
-    def __init__(self, **kwargs):
-        super(DeviceScreen, self).__init__(**kwargs)
-        self.layout = BoxLayout(orientation='vertical')
-        
-        self.device_label = MDLabel(text="Устройство: ", halign="center", font_style="H5")
-        self.layout.add_widget(self.device_label)
-        
-        self.back_btn = MDFlatButton(text="Назад")
-        self.back_btn.bind(on_press=self.go_back)
-        self.layout.add_widget(self.back_btn)
-        
-        self.add_widget(self.layout)
-    
+class DeviceScreen(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.init_ui()
+
+    def init_ui(self):
+        self.layout = QVBoxLayout()
+
+        # Заголовок
+        self.device_label = QLabel("Устройство: ")
+        self.device_label.setAlignment(Qt.AlignCenter)
+        self.layout.addWidget(self.device_label)
+
+        # Кнопка "Назад"
+        self.back_btn = QPushButton("Назад")
+        self.back_btn.setObjectName("back_button")  # Устанавливаем ID для стилизации
+        self.back_btn.clicked.connect(self.go_back)
+        self.layout.addWidget(self.back_btn)
+
+        self.setLayout(self.layout)
+
     def set_device(self, device_name):
-        self.device_name = device_name
-        self.device_label.text = f"Устройство: {device_name}"
-    
-    def go_back(self, instance):
-        self.manager.current = 'main_screen'
+        """Устанавливает имя устройства"""
+        self.device_label.setText(f"Устройство: {device_name}")
 
-class MyApp(MDApp):  # Наследуем от MDApp вместо App
-    def build(self):
-        # Применяем тему Material You
-        apply_material_you_theme(self)
+    def go_back(self):
+        """Возврат на главный экран"""
+        self.parent().set_current_screen("main_screen")
 
-        self.screen_manager = ScreenManager()
-        self.main_screen = MainScreen(name='main_screen')
-        self.device_screen = DeviceScreen(name='device_screen')
-        self.screen_manager.add_widget(self.main_screen)
-        self.screen_manager.add_widget(self.device_screen)
-        return self.screen_manager
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("VNC Viewer")
+        self.setGeometry(100, 100, 800, 600)
 
-if __name__ == '__main__':
-    MyApp().run()
+        # Применяем тему Material Design
+        apply_stylesheet(self, theme='light_blue.xml')  # Вы можете выбрать другую тему
+
+        # Создаем стек для переключения экранов
+        self.stacked_widget = QStackedWidget()
+        self.setCentralWidget(self.stacked_widget)
+
+        # Главный экран
+        self.main_screen = MainScreen()
+        self.main_screen.setParent(self)
+        self.stacked_widget.addWidget(self.main_screen)
+
+        # Экран устройства
+        self.device_screen = DeviceScreen()
+        self.device_screen.setParent(self)
+        self.stacked_widget.addWidget(self.device_screen)
+
+    def set_current_screen(self, screen_name, device_ip=None):
+        """Переключение между экранами"""
+        if screen_name == "main_screen":
+            self.stacked_widget.setCurrentWidget(self.main_screen)
+        elif screen_name == "device_screen":
+            self.device_screen.set_device(device_ip)
+            self.stacked_widget.setCurrentWidget(self.device_screen)
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    window = MainWindow()
+    window.show()
+    sys.exit(app.exec())
