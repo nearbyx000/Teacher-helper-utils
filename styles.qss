@@ -1,0 +1,49 @@
+/* styles.qss */
+QMainWindow {
+    background-color: #121212;
+}
+
+QLabel {
+    color: #ffffff;
+    font-size: 14px;
+}
+
+QProgressBar {
+    background-color: #2e2e2e;
+    color: white;
+    border-radius: 5px;
+    text-align: center;
+}
+
+QProgressBar::chunk {
+    background-color: #4CAF50;
+    border-radius: 5px;
+}
+
+QPushButton {
+    background-color: #6200ea;
+    color: white;
+    border-radius: 10px;
+    padding: 10px;
+    font-size: 14px;
+}
+
+QPushButton:hover {
+    background-color: #3700b3;
+}
+
+QPushButton:pressed {
+    background-color: #1a0073;
+}
+
+QPushButton#shutdown_button {
+    background-color: #d32f2f;
+}
+
+QPushButton#shutdown_button:hover {
+    background-color: #b71c1c;
+}
+
+QPushButton#shutdown_button:pressed {
+    background-color: #8e0000;
+}
