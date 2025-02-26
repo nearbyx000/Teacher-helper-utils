@@ -1,7 +1,8 @@
 import sys
+import subprocess
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QLabel, QPushButton, QScrollArea, QGridLayout, QStackedWidget,
-    QProgressBar, QGraphicsDropShadowEffect
+    QProgressBar, QGraphicsDropShadowEffect, QListWidget
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon, QFont
@@ -28,21 +29,16 @@ class MainScreen(QWidget):
         self.progress_bar.setValue(0)
         self.layout.addWidget(self.progress_bar)
 
-        # Список элементов
-        self.scroll = QScrollArea()
-        self.scroll.setWidgetResizable(True)
-        self.grid = QWidget()
-        self.grid_layout = QGridLayout()
-        self.grid.setLayout(self.grid_layout)
-        self.scroll.setWidget(self.grid)
-        self.layout.addWidget(self.scroll)
+        # Список подключенных устройств
+        self.device_list = QListWidget()
+        self.layout.addWidget(self.device_list)
 
-        # Кнопка "Начать"
-        self.start_btn = QPushButton("Начать")
-        self.start_btn.setIcon(QIcon(":/icons/search_icon.png"))  # Используем иконку из ресурсов
-        self.start_btn.setFont(QFont("Roboto", 12))
-        self.start_btn.clicked.connect(self.on_start_clicked)
-        self.layout.addWidget(self.start_btn)
+        # Кнопка "Начать урок"
+        self.start_lesson_btn = QPushButton("Начать урок")
+        self.start_lesson_btn.setIcon(QIcon(":/icons/search_icon.png"))  # Используем иконку из ресурсов
+        self.start_lesson_btn.setFont(QFont("Roboto", 12))
+        self.start_lesson_btn.clicked.connect(self.on_start_lesson_clicked)
+        self.layout.addWidget(self.start_lesson_btn)
 
         # Кнопка "Выход"
         self.exit_btn = QPushButton("Выход")
@@ -60,13 +56,18 @@ class MainScreen(QWidget):
         shadow.setXOffset(5)
         shadow.setYOffset(5)
         shadow.setColor(Qt.gray)
-        self.start_btn.setGraphicsEffect(shadow)
+        self.start_lesson_btn.setGraphicsEffect(shadow)
         self.exit_btn.setGraphicsEffect(shadow)
 
-    def on_start_clicked(self):
-        """Обработчик нажатия кнопки 'Начать'."""
-        self.progress_bar.setValue(50)  # Пример изменения прогресс-бара
-        self.label.setText("Процесс запущен!")
+    def on_start_lesson_clicked(self):
+        """Обработчик нажатия кнопки 'Начать урок'."""
+        try:
+            # Запуск UltraVNC Server
+            subprocess.Popen(["vncserver.exe", "-autokill", "-listen", "5900"])
+            self.label.setText("Сервер запущен. Ожидание подключений...")
+            self.progress_bar.setValue(50)
+        except Exception as e:
+            self.label.setText(f"Ошибка: {e}")
 
     def on_exit_clicked(self):
         """Обработчик нажатия кнопки 'Выход'."""
@@ -80,7 +81,7 @@ class MainWindow(QMainWindow):
         self.setGeometry(100, 100, 800, 600)
 
         # Загрузка стилей из ресурсов
-        with open(":/styles.qss", "r") as f:
+        with open("styles.qss", "r") as f:
             self.setStyleSheet(f.read())
 
         # Создаем стек для переключения экранов
