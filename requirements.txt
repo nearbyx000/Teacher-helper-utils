@@ -1,3 +1,4 @@
+altgraph==0.17.4
 certifi==2025.1.31
 charset-normalizer==3.4.1
 docopt==0.6.2
@@ -6,15 +7,21 @@ Jinja2==3.1.5
 MarkupSafe==3.0.2
 numpy==2.2.3
 opencv-python==4.11.0.86
+packaging==24.2
+pefile==2023.2.7
 pipreqs==0.4.13
+pyinstaller==6.12.0
+pyinstaller-hooks-contrib==2025.1
 PyQt5-Qt5==5.15.2
 PyQt5_sip==12.17.0
 PySide6==6.8.2.1
 PySide6_Addons==6.8.2.1
 PySide6_Essentials==6.8.2.1
 python-vlc==3.0.21203
+pywin32-ctypes==0.2.3
 qt-material==2.14
 requests==2.32.3
+setuptools==75.8.2
 shiboken6==6.8.2.1
 urllib3==2.3.0
 yarg==0.1.10
