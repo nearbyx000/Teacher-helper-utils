@@ -3,9 +3,15 @@ from tkinter import messagebox
 import subprocess
 import json
 import threading
-import socket # Для определения IP-адреса учителя
-import os     # Для проверки существования файлов скриптов
+import socket
+import os
+import time # Добавлен импорт time для задержки в потоке объявления IP
+from PIL import Image, ImageTk # Для работы с изображениями в Tkinter
+import numpy as np # Для преобразования байтов в массив numpy для Pillow
 
+# ВНИМАНИЕ: Убедитесь, что файлы main.py, students_discover.py
+# и student_stream_daemon.py находятся в той же директории,
+# что и teacher_master_app.py, или укажите полные пути к ним.
 # ВНИМАНИЕ: Убедитесь, что файлы main.py, students_discover.py
 # и student_stream_daemon.py находятся в той же директории,
 # что и teacher_master_app.py, или укажите полные пути к ним.
@@ -15,17 +21,18 @@ class VideoStreamWindow:
     def __init__(self, master, student_ip, teacher_ip):
         self.master = master
         self.student_ip = student_ip
-        self.teacher_ip = teacher_ip # IP-адрес учителя, чтобы FFmpeg ученика знал, куда стримить
-        self.width, self.height = 1280, 720  # Стандартное разрешение
+        self.teacher_ip = teacher_ip
+        self.width, self.height = 1280, 720  # Стандартное разрешение, можно сделать настраиваемым
+        self.process = None
+        self.running = False
 
         self.window = tk.Toplevel(master)
         self.window.title(f"Экран ученика {student_ip}")
+        self.window.protocol("WM_DELETE_WINDOW", self.stop) # Добавлено для корректного закрытия окна
 
         self.label = tk.Label(self.window)
         self.label.pack()
 
-        self.process = None
-        self.running = False
         self.start_stream()
 
     def start_stream(self):
@@ -34,12 +41,7 @@ class VideoStreamWindow:
         Поток будет приходить на RTMP-сервер, запущенный на IP учителя.
         """
         self.running = True
-        # Команда FFmpeg для чтения RTMP-потока.
-        # Ученик должен стримить на rtmp://<IP_УЧИТЕЛЯ>/live/stream
-        # Здесь мы читаем с rtmp://<IP_УЧЕНИКА>/live/stream, что неверно, если RTMP-сервер у учителя.
-        # Если RTMP-сервер на машине учителя, то имя потока должно быть уникальным для каждого ученика.
-        # Пусть будет "student_IP_ученика"
-        stream_name = f"student_{self.student_ip.replace('.', '_')}" # Уникальное имя потока для каждого ученика
+        stream_name = f"student_{self.student_ip.replace('.', '_')}"
 
         command = [
             'ffmpeg',
@@ -51,35 +53,43 @@ class VideoStreamWindow:
             '-'
         ]
         try:
-            # Убедитесь, что FFmpeg установлен и доступен в PATH
             self.process = subprocess.Popen(command, stdout=subprocess.PIPE, bufsize=10**8)
-            # Необходимо также убедиться, что FFmpeg запущен на стороне ученика и стримит на teacher_ip
             self.update_frame()
         except FileNotFoundError:
             messagebox.showerror("Ошибка FFmpeg", "FFmpeg не найден. Убедитесь, что он установлен и доступен в PATH.")
-            self.stop() # Останавливаем поток, если FFmpeg не найден
+            self.stop()
         except Exception as e:
             messagebox.showerror("Ошибка запуска потока", f"Не удалось запустить поток для {self.student_ip}: {e}")
             self.stop()
 
     def update_frame(self):
-        if not self.running or self.process.poll() is not None: # Проверяем, не завершился ли процесс
+        """Обновляет кадр видеопотока в окне."""
+        if not self.running: # Если поток остановлен, прекращаем обновления
+            return
+
+        # Проверяем, не завершился ли процесс FFmpeg
+        if self.process and self.process.poll() is not None:
             if self.running: # Если процесс завершился, но мы еще пытались обновлять
                 print(f"FFmpeg процесс для {self.student_ip} завершился. Код: {self.process.poll()}")
             self.stop()
             return
 
         try:
-            # Важно: размер кадра должен соответствовать размеру потока.
-            # Если разрешение ученика отличается, нужно его определить или передать.
-            # Пока используем стандартное.
+            # Читаем данные из stdout FFmpeg. Размер должен соответствовать self.width * self.height * 3.
             raw_frame = self.process.stdout.read(self.width * self.height * 3)
             if raw_frame:
+                # Преобразуем байты в массив numpy и затем в изображение PIL
                 frame = np.frombuffer(raw_frame, dtype=np.uint8).reshape((self.height, self.width, 3))
                 img = Image.fromarray(frame)
                 imgtk = ImageTk.PhotoImage(image=img)
-                self.label.imgtk = imgtk
+                self.label.imgtk = imgtk # Важно сохранить ссылку, чтобы изображение не было удалено сборщиком мусора
                 self.label.config(image=imgtk)
+            else:
+                # Если raw_frame пуст, это может указывать на конец потока или ошибку
+                print(f"Пустой кадр для {self.student_ip}. Возможно, поток завершился.")
+                self.stop()
+                return
+
         except ValueError as ve:
             print(f"Ошибка размера кадра для {self.student_ip}: {ve}. Возможно, разрешение потока изменилось или не соответствует.")
             self.stop()
@@ -87,31 +97,34 @@ class VideoStreamWindow:
         except Exception as e:
             print(f"Ошибка видеопотока для {self.student_ip}: {e}")
             self.stop()
-            return # Прекращаем дальнейшие обновления
+            return
 
-        self.window.after(10, self.update_frame)
+        self.window.after(10, self.update_frame) # Продолжаем обновлять кадр каждые 10 мс
 
     def stop(self):
+        """Останавливает видеопоток и закрывает окно."""
         self.running = False
         if self.process:
-            self.process.terminate()
-            self.process.wait(timeout=2) # Дать время процессу завершиться
-            if self.process.poll() is None: # Если процесс все еще запущен после terminate
-                self.process.kill() # Принудительно убить
+            self.process.terminate() # Пытаемся корректно завершить процесс
+            try:
+                self.process.wait(timeout=2) # Ждем до 2 секунд, пока процесс завершится
+            except subprocess.TimeoutExpired:
+                print(f"FFmpeg процесс для {self.student_ip} не завершился, принудительно убиваю.")
+                self.process.kill() # Если не завершился, убиваем принудительно
+            self.process = None # Очищаем ссылку на процесс
             print(f"Поток для {self.student_ip} остановлен.")
-        if self.window.winfo_exists(): # Проверяем, существует ли окно перед уничтожением
-            self.window.destroy() # Закрываем окно при остановке
+        if self.window.winfo_exists():
+            self.window.destroy()
 
 # Основное приложение для учителя
 class MainApplication:
     def __init__(self, master):
         self.master = master
         master.title("Мониторинг класса")
-        master.geometry("400x250") # Увеличиваем размер для IP-адреса
+        master.geometry("400x250")
 
-        self.active_streams = {}  # {ip: VideoStreamWindow}
+        self.active_streams = {}
 
-        # Определяем IP-адрес учителя
         self.teacher_ip = self.get_local_ip()
         if self.teacher_ip:
             tk.Label(master, text=f"Ваш IP-адрес (для учеников): {self.teacher_ip}").pack(pady=5)
@@ -121,7 +134,6 @@ class MainApplication:
             tk.Label(master, text="Не удалось определить ваш IP-адрес.").pack(pady=5)
             messagebox.showwarning("Предупреждение", "Не удалось определить ваш локальный IP-адрес. Убедитесь, что сетевые настройки корректны.")
 
-        # GUI элементы
         self.btn_discover = tk.Button(master, text="Найти учеников", command=self.discover_students)
         self.btn_discover.pack(pady=10)
 
@@ -132,7 +144,7 @@ class MainApplication:
         """Автоматически определяет локальный IP-адрес учителя."""
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            s.connect(("8.8.8.8", 80))
+            s.connect(("8.8.8.8", 80)) # Подключение к внешнему адресу, чтобы получить локальный IP
             ip = s.getsockname()[0]
             s.close()
             return ip
@@ -145,50 +157,25 @@ class MainApplication:
         if not self.teacher_ip:
             return
 
+        # Использование UDP-сокета для широковещания
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-        # Отправляем на порт 5000, который слушает student_discovery.py
-        server_address = ('255.255.255.255', 5000)
+        # Отправляем на порт 5000, который будет слушать student_stream_daemon.py
+        server_address = ('255.255.255.255', 5000) # Широковещательный адрес и порт
 
         print(f"Начинаю широковещательное объявление IP: {self.teacher_ip}")
         while True:
             try:
-                # Отправляем сообщение, которое student_discovery.py ожидает как "DISCOVER_STUDENTS"
-                # ИЛИ модифицируем student_discovery.py, чтобы он принимал IP учителя
-                # В текущей логике students_discover.py, он сам отправляет DISCOVER_STUDENTS
-                # и ждет STUDENT_HERE.
-                # Для обнаружения IP учителя, потребуется модифицировать student_stream_daemon.py
-                # и teacher_master_app.py
-                # Пока оставим как есть, учитель просто объявляет себя, но это не используется student_discovery.py
-
-                # Если бы teacher_master_app.py сам был сервером обнаружения, то здесь бы
-                # он слушал запросы от учеников. Но student_discovery.py - это отдельный скрипт.
-
-                # Для того, чтобы ученики знали IP учителя, учитель должен:
-                # 1. Запустить RTMP-сервер
-                # 2. Объявить свой IP. Ученик должен активно слушать это объявление.
-                # Скрипт student_stream_daemon.py сейчас не слушает.
-                # student_discovery.py ТОЛЬКО находит учеников, но не передает IP учителя.
-
-                # Корректная логика:
-                # Учитель запускает RTMP-сервер и широковещательно объявляет свой IP.
-                # Ученик (student_stream_daemon.py) слушает широковещательные объявления,
-                # находит IP учителя и начинает стримить на него.
-
-                # В рамках вашего запроса "вызывать уже написанные скрипты",
-                # _start_teacher_announcer пока не будет взаимодействовать с student_discovery.py
-                # напрямую для передачи IP, но он нужен для будущей модификации student_stream_daemon.py.
-                # Сейчас он просто объявляет IP, чтобы ученик мог его поймать.
-
-                message = f"TEACHER_IP_ANNOUNCEMENT:{self.teacher_ip}".encode('utf-8')
+                # Отправляем IP учителя, чтобы student_stream_daemon.py мог его получить
+                message = f"TEACHER_IP:{self.teacher_ip}".encode('utf-8')
                 sock.sendto(message, server_address)
-                time.sleep(5)
+                time.sleep(5) # Объявляем IP каждые 5 секунд
             except Exception as e:
                 print(f"Ошибка при широковещательном объявлении: {e}")
-                time.sleep(5)
+                time.sleep(5) # Ждем перед следующей попыткой
 
     def discover_students(self):
-        """Запускает student_discovery.py для поиска учеников."""
+        """Запускает students_discover.py для поиска учеников."""
         if not os.path.exists('students_discover.py'):
             messagebox.showerror("Ошибка", "Файл students_discover.py не найден в текущей директории.")
             return
@@ -196,18 +183,16 @@ class MainApplication:
         self.status_label.config(text="Поиск учеников...")
         self.btn_discover.config(state=tk.DISABLED)
 
-        # Вызываем students_discover.py как отдельный процесс
         threading.Thread(target=self._run_discovery_script, daemon=True).start()
 
     def _run_discovery_script(self):
         """Выполняет students_discover.py и обрабатывает его вывод."""
         try:
-            # subprocess.run запускает скрипт и ждет его завершения
             result = subprocess.run(
                 ['python3', 'students_discover.py'],
                 capture_output=True,
                 text=True,
-                check=True # Вызовет исключение CalledProcessError, если скрипт завершится с ненулевым кодом
+                check=True
             )
 
             # Ожидаем, что students_discover.py выведет JSON-строку с IP-адресами
@@ -224,13 +209,14 @@ class MainApplication:
             self.master.after(0, self._discovery_failed, f"Неизвестная ошибка при поиске учеников: {e}")
 
     def _process_discovery_results(self, student_ips):
-        """Обрабатывает найденные IP-адреса учеников."""
+        """Обрабатывает найденные IP-адреса учеников, открывая/закрывая окна потоков."""
         current_active_ips = set(self.active_streams.keys())
         discovered_ips = set(student_ips)
 
         # Открываем окна для новых учеников
         for ip in discovered_ips - current_active_ips:
             print(f"Найдена новый ученик: {ip}. Открываю окно потока.")
+            # Передаем IP учителя, чтобы ученик знал, куда стримить
             self.active_streams[ip] = VideoStreamWindow(self.master, ip, self.teacher_ip)
 
         # Закрываем окна для учеников, которые больше не обнаружены
@@ -254,17 +240,27 @@ class MainApplication:
         print("Закрытие главного приложения. Останавливаю все потоки.")
         for ip, stream_window in list(self.active_streams.items()):
             stream_window.stop()
-            del self.active_streams[ip]
         self.master.destroy()
 
 if __name__ == "__main__":
     # Проверка наличия необходимых скриптов
-    required_scripts = ['students_discover.py'] # main.py и student_stream_daemon.py не вызываются здесь напрямую
+    required_scripts = ['students_discover.py']
     for script in required_scripts:
         if not os.path.exists(script):
             print(f"Ошибка: Необходимый скрипт '{script}' не найден в текущей директории.")
             print("Убедитесь, что все скрипты находятся рядом с teacher_master_app.py.")
-            exit(1) # Завершаем работу, если скрипт не найден
+            exit(1)
+
+    # Проверка наличия FFmpeg в PATH
+    try:
+        subprocess.run(['ffmpeg', '-version'], check=True, capture_output=True, text=True)
+        print("FFmpeg найден в PATH.")
+    except FileNotFoundError:
+        print("Ошибка: FFmpeg не найден в PATH. Пожалуйста, установите FFmpeg и добавьте его в системную переменную PATH.")
+        exit(1)
+    except subprocess.CalledProcessError as e:
+        print(f"Ошибка при проверке FFmpeg: {e.stderr}")
+        exit(1)
 
     root = tk.Tk()
     app = MainApplication(root)
